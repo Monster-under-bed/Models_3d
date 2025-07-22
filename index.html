@@ -3,11 +3,7 @@
 <head>
     <title>FreeCAD 3D Viewer</title>
     <style>
-        body { 
-            margin: 0;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-        }
+        body { margin: 0; }
         #info {
             position: absolute;
             top: 10px;
@@ -15,162 +11,121 @@
             color: white;
             background: rgba(0,0,0,0.7);
             padding: 10px;
-            border-radius: 5px;
-            z-index: 100;
-        }
-        #webgl-error {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 20px;
-            background: #ff3333;
-            color: white;
-            text-align: center;
             z-index: 100;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/WebGL.js"></script>
+    <!-- Используем последнюю стабильную версию Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/WebGL.js"></script>
 </head>
 <body>
-    <div id="info">Загрузка модели...</div>
-    <div id="webgl-error" style="display: none;"></div>
+    <div id="info">Инициализация...</div>
     
     <script>
-        // 1. Проверка поддержки WebGL
+        // 1. Проверка WebGL
         if (!WEBGL.isWebGLAvailable()) {
-            const errorElement = document.getElementById('webgl-error');
-            errorElement.style.display = 'block';
-            errorElement.innerHTML = WEBGL.getWebGLErrorMessage();
-            throw new Error(WEBGL.getWebGLErrorMessage());
+            const warning = WEBGL.getWebGLErrorMessage();
+            document.body.appendChild(warning);
+            throw new Error('WebGL не поддерживается');
         }
 
         // 2. Инициализация сцены
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x222222);
         
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
         camera.position.z = 5;
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
         // 3. Освещение
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
+        const light = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(light);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(5, 10, 7);
-        scene.add(directionalLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 7);
+        scene.add(dirLight);
 
         // 4. Визуальные помощники
-        const gridHelper = new THREE.GridHelper(10, 10, 0x555555, 0x333333);
-        scene.add(gridHelper);
+        const grid = new THREE.GridHelper(10, 10);
+        scene.add(grid);
         
-        const axesHelper = new THREE.AxesHelper(5);
-        scene.add(axesHelper);
+        const axes = new THREE.AxesHelper(5);
+        scene.add(axes);
 
-        // 5. Загрузка модели с полной проверкой
+        // 5. Загрузка модели с улучшенной обработкой ошибок
         const loader = new THREE.GLTFLoader();
-        const infoElement = document.getElementById('info');
+        const info = document.getElementById('info');
         
-        loader.load(
-            './model.glb',
-            (gltf) => {
-                console.log("Модель успешно загружена:", gltf);
+        // Альтернативный метод загрузки через fetch
+        async function loadModel() {
+            try {
+                info.textContent = "Начинаем загрузку...";
                 
-                // Проверка содержимого модели
-                let hasVisibleObjects = false;
-                gltf.scene.traverse((child) => {
-                    if (child.isMesh) {
-                        console.log("Объект:", child.name, child);
-                        hasVisibleObjects = true;
-                    }
+                const response = await fetch('./model.glb');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.arrayBuffer();
+                info.textContent = "Файл загружен, обработка...";
+                
+                // Парсинг модели
+                const gltf = await new Promise((resolve, reject) => {
+                    loader.parse(data, '', resolve, reject);
                 });
                 
-                if (!hasVisibleObjects) {
-                    infoElement.innerHTML = "Модель загружена, но не содержит видимых объектов";
-                    console.warn("Модель не содержит мешей");
-                    return;
-                }
+                info.textContent = "Модель загружена успешно!";
+                console.log("Успешно распарсено:", gltf);
                 
+                // Добавляем модель в сцену
                 scene.add(gltf.scene);
-                infoElement.innerHTML = "Модель загружена. Используйте мышь для вращения";
                 
-                // Автоматическое позиционирование камеры
-                const bbox = new THREE.Box3().setFromObject(gltf.scene);
-                const center = bbox.getCenter(new THREE.Vector3());
-                const size = bbox.getSize(new THREE.Vector3());
+                // Автонастройка камеры
+                const box = new THREE.Box3().setFromObject(gltf.scene);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
                 
-                console.log("Размеры модели:", size);
-                console.log("Центр модели:", center);
-                
-                // Настройка камеры
                 camera.position.copy(center);
                 camera.position.z += size.length() * 1.5;
                 camera.lookAt(center);
                 
-                // Обновление контролов
+                // Обновляем элементы управления
+                const controls = new THREE.OrbitControls(camera, renderer.domElement);
                 controls.target.copy(center);
                 controls.update();
-            },
-            (xhr) => {
-                const percent = (xhr.loaded / xhr.total * 100).toFixed(2);
-                infoElement.innerHTML = `Загрузка: ${percent}%`;
-                console.log(`Загружено: ${percent}%`);
-            },
-            (error) => {
-                console.error("Ошибка загрузки:", error);
-                infoElement.innerHTML = `Ошибка загрузки: ${error.message}`;
                 
-                // Попробуем альтернативный способ загрузки
-                console.log("Пробуем альтернативный метод загрузки...");
-                fetch('./model.glb')
-                    .then(response => {
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                        return response.arrayBuffer();
-                    })
-                    .then(data => {
-                        loader.parse(data, '', (gltf) => {
-                            scene.add(gltf.scene);
-                            infoElement.innerHTML = "Модель загружена (альтернативный метод)";
-                        });
-                    })
-                    .catch(fetchError => {
-                        console.error("Ошибка fetch:", fetchError);
-                        infoElement.innerHTML = `Ошибка загрузки (fetch): ${fetchError.message}`;
-                    });
+                return controls;
+                
+            } catch (error) {
+                console.error("Полная ошибка загрузки:", error);
+                info.textContent = `Ошибка: ${error.message}`;
+                return null;
             }
-        );
+        }
 
-        // 6. Управление камерой
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
+        // 6. Запуск загрузки и анимации
+        let controls = null;
+        
+        loadModel().then(result => {
+            controls = result;
+            animate();
+        });
 
-        // 7. Анимация
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            if (controls) controls.update();
             renderer.render(scene, camera);
         }
-        animate();
 
-        // 8. Обработка изменения размера окна
+        // 7. Обработка ресайза
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        // 9. Информация о сцене
-        console.log("Сцена инициализирована. Ожидание загрузки модели...");
-        infoElement.innerHTML = "Сцена готова. Загрузка модели...";
     </script>
 </body>
 </html>
